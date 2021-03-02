@@ -42,7 +42,7 @@ func createTestStore() *Store {
 		panic(err)
 	}
 
-	err = store.registerColumns([]string{name})
+	err = store.RegisterColumns([]string{name})
 	if err != nil {
 		panic(err)
 	}

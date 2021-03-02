@@ -105,7 +105,7 @@ func (store *Store) assertColumnFamily(name string) (*gorocksdb.ColumnFamilyHand
 	return handle, nil
 }
 
-func (store *Store) registerColumns(names []string) error {
+func (store *Store) RegisterColumns(names []string) error {
 
 	for _, name := range names {
 
