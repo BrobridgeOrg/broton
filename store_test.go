@@ -144,3 +144,43 @@ func TestDelete(t *testing.T) {
 		t.Error(err)
 	}
 }
+
+func TestList(t *testing.T) {
+
+	createTestBroton("testing")
+	defer closeTestBroton()
+
+	store := createTestStore()
+
+	column := fmt.Sprintf("bench-%d", testCounter)
+
+	if err := store.Put(column, []byte("Benchmark"), []byte("value")); err != nil {
+		t.Error(err)
+	}
+
+	for i := 1; i <= 10; i++ {
+		key := Int64ToBytes(int64(i))
+
+		if err := store.PutInt64(column, key, int64(i)); err != nil {
+			t.Error(err)
+		}
+	}
+
+	var counter int64 = 0
+	targetKey := Int64ToBytes(int64(1))
+	store.List(column, targetKey, func(key []byte, value []byte) bool {
+
+		if counter == 10 {
+			return false
+		}
+
+		counter++
+
+		if BytesToInt64(value) != counter {
+			t.Fail()
+			return false
+		}
+
+		return true
+	})
+}

@@ -341,3 +341,36 @@ func (store *Store) GetString(column string, key []byte) (string, error) {
 
 	return data, nil
 }
+
+func (store *Store) List(column string, targetKey []byte, callback func(key []byte, value []byte) bool) error {
+
+	cfHandle, err := store.getColumnFamailyHandle(column)
+	if err != nil {
+		return errors.New("Not found \"" + column + "\" column family")
+	}
+
+	// Initializing iterator
+	ro := gorocksdb.NewDefaultReadOptions()
+	ro.SetFillCache(false)
+	ro.SetTailing(true)
+	iter := store.db.NewIteratorCF(ro, cfHandle)
+	if iter.Err() != nil {
+		return iter.Err()
+	}
+
+	for iter.Seek(targetKey); iter.Valid(); iter.Next() {
+		key := iter.Key()
+		value := iter.Value()
+
+		isContinuous := callback(key.Data(), value.Data())
+
+		key.Free()
+		value.Free()
+
+		if !isContinuous {
+			break
+		}
+	}
+
+	return nil
+}
