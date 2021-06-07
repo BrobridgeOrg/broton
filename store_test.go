@@ -139,9 +139,9 @@ func TestDelete(t *testing.T) {
 	}
 
 	// It should get nothing
-	value, err := store.GetBytes(column, []byte("Benchmark"))
-	if value != nil {
-		t.Error(err)
+	value, _ := store.GetBytes(column, []byte("Benchmark"))
+	if len(value) != 0 {
+		t.Fail()
 	}
 }
 

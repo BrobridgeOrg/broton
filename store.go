@@ -3,40 +3,29 @@ package broton
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
-	"sync"
 
-	"github.com/tecbot/gorocksdb"
+	"github.com/cockroachdb/pebble"
 )
 
 type Store struct {
-	broton    *Broton
-	options   *Options
-	name      string
-	db        *gorocksdb.DB
-	cfHandles map[string]*gorocksdb.ColumnFamilyHandle
-	ro        *gorocksdb.ReadOptions
-	wo        *gorocksdb.WriteOptions
-
-	subscriptions sync.Map
+	broton         *Broton
+	options        *Options
+	name           string
+	dbPath         string
+	columnFamilies map[string]*ColumnFamily
 }
 
 func NewStore(broton *Broton, storeName string) (*Store, error) {
 
-	// Initializing options
-	ro := gorocksdb.NewDefaultReadOptions()
-	ro.SetFillCache(false)
-	//	ro.SetTailing(true)
-	wo := gorocksdb.NewDefaultWriteOptions()
-
 	store := &Store{
-		broton:    broton,
-		options:   broton.options,
-		name:      storeName,
-		cfHandles: make(map[string]*gorocksdb.ColumnFamilyHandle),
-		ro:        ro,
-		wo:        wo,
+		broton:         broton,
+		options:        broton.options,
+		name:           storeName,
+		dbPath:         filepath.Join(broton.options.DatabasePath, storeName),
+		columnFamilies: make(map[string]*ColumnFamily),
 	}
 
 	err := store.openDatabase()
@@ -49,67 +38,42 @@ func NewStore(broton *Broton, storeName string) (*Store, error) {
 
 func (store *Store) openDatabase() error {
 
-	dbpath := filepath.Join(store.options.DatabasePath, store.name)
-	err := os.MkdirAll(dbpath, os.ModePerm)
+	err := os.MkdirAll(store.dbPath, os.ModePerm)
 	if err != nil {
 		return err
 	}
-
-	// List column families
-	cfNames, _ := gorocksdb.ListColumnFamilies(store.options.RocksdbOptions, dbpath)
-
-	if len(cfNames) == 0 {
-		cfNames = []string{"default"}
-	}
-
-	// Preparing options for column families
-	cfOpts := make([]*gorocksdb.Options, len(cfNames))
-	for i := range cfNames {
-		cfOpts[i] = store.options.RocksdbOptions
-	}
-
-	// Open database
-	db, cfHandles, err := gorocksdb.OpenDbColumnFamilies(store.options.RocksdbOptions, dbpath, cfNames, cfOpts)
-	if err != nil {
-		return err
-	}
-
-	for i, name := range cfNames {
-		store.cfHandles[name] = cfHandles[i]
-	}
-
-	store.db = db
 
 	return nil
 }
 
 func (store *Store) Close() {
-	store.db.Close()
+
+	for _, cf := range store.columnFamilies {
+		cf.Close()
+	}
+
 	store.broton.UnregisterStore(store.name)
 }
 
-func (store *Store) assertColumnFamily(name string) (*gorocksdb.ColumnFamilyHandle, error) {
+func (store *Store) assertColumnFamily(name string) (*ColumnFamily, error) {
 
-	handle, ok := store.cfHandles[name]
+	cf, ok := store.columnFamilies[name]
 	if !ok {
-		handle, err := store.db.CreateColumnFamily(store.options.RocksdbOptions, name)
+		cf := NewColumnFamily(store, name)
+		err := cf.Open()
 		if err != nil {
 			return nil, err
 		}
 
-		store.cfHandles[name] = handle
+		store.columnFamilies[name] = cf
 
-		return handle, nil
+		return cf, nil
 	}
 
-	return handle, nil
+	return cf, nil
 }
 
-func (store *Store) GetDb() *gorocksdb.DB {
-	return store.db
-}
-
-func (store *Store) GetColumnFamailyHandle(name string) (*gorocksdb.ColumnFamilyHandle, error) {
+func (store *Store) GetColumnFamailyHandle(name string) (*ColumnFamily, error) {
 	return store.getColumnFamailyHandle(name)
 }
 
@@ -127,29 +91,24 @@ func (store *Store) RegisterColumns(names []string) error {
 	return nil
 }
 
-func (store *Store) getColumnFamailyHandle(name string) (*gorocksdb.ColumnFamilyHandle, error) {
+func (store *Store) getColumnFamailyHandle(name string) (*ColumnFamily, error) {
 
-	cfHandle, ok := store.cfHandles[name]
+	cf, ok := store.columnFamilies[name]
 	if !ok {
 		return nil, fmt.Errorf("Not found \"%s\" column family", name)
 	}
 
-	return cfHandle, nil
+	return cf, nil
 }
 
-func (store *Store) getValue(column string, key []byte) (*gorocksdb.Slice, error) {
+func (store *Store) getValue(column string, key []byte) ([]byte, io.Closer, error) {
 
 	cfHandle, err := store.getColumnFamailyHandle(column)
 	if err != nil {
-		return nil, errors.New("Not found \"" + column + "\" column family")
+		return nil, nil, errors.New("Not found \"" + column + "\" column family")
 	}
 
-	value, err := store.db.GetCF(store.ro, cfHandle, key)
-	if err != nil {
-		return nil, err
-	}
-
-	return value, nil
+	return cfHandle.Db.Get(key)
 }
 
 func (store *Store) Delete(column string, key []byte) error {
@@ -159,13 +118,7 @@ func (store *Store) Delete(column string, key []byte) error {
 		return errors.New("Not found \"" + column + "\" column family")
 	}
 
-	// Write
-	err = store.db.DeleteCF(store.wo, cfHandle, key)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return cfHandle.Db.Delete(key, pebble.Sync)
 }
 
 func (store *Store) Put(column string, key []byte, data []byte) error {
@@ -175,13 +128,7 @@ func (store *Store) Put(column string, key []byte, data []byte) error {
 		return errors.New("Not found \"" + column + "\" column family")
 	}
 
-	// Write
-	err = store.db.PutCF(store.wo, cfHandle, key, data)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return cfHandle.Db.Set(key, data, pebble.Sync)
 }
 
 func (store *Store) PutInt64(column string, key []byte, value int64) error {
@@ -193,28 +140,23 @@ func (store *Store) PutInt64(column string, key []byte, value int64) error {
 
 	data := Int64ToBytes(value)
 
-	// Write
-	err = store.db.PutCF(store.wo, cfHandle, key, data)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return cfHandle.Db.Set(key, data, pebble.Sync)
 }
 
 func (store *Store) GetInt64(column string, key []byte) (int64, error) {
 
-	value, err := store.getValue(column, key)
+	value, closer, err := store.getValue(column, key)
 	if err != nil {
+		if err == pebble.ErrNotFound {
+			return 0, nil
+		}
+
 		return 0, err
 	}
 
-	if !value.Exists() {
-		return 0, nil
-	}
+	data := BytesToInt64(value)
 
-	data := BytesToInt64(value.Data())
-	value.Free()
+	closer.Close()
 
 	return data, nil
 }
@@ -228,28 +170,23 @@ func (store *Store) PutUint64(column string, key []byte, value uint64) error {
 
 	data := Uint64ToBytes(value)
 
-	// Write
-	err = store.db.PutCF(store.wo, cfHandle, key, data)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return cfHandle.Db.Set(key, data, pebble.Sync)
 }
 
 func (store *Store) GetUint64(column string, key []byte) (uint64, error) {
 
-	value, err := store.getValue(column, key)
+	value, closer, err := store.getValue(column, key)
 	if err != nil {
+		if err == pebble.ErrNotFound {
+			return 0, nil
+		}
+
 		return 0, err
 	}
 
-	if !value.Exists() {
-		return 0, nil
-	}
+	data := BytesToUint64(value)
 
-	data := BytesToUint64(value.Data())
-	value.Free()
+	closer.Close()
 
 	return data, nil
 }
@@ -263,46 +200,42 @@ func (store *Store) PutFloat64(column string, key []byte, value float64) error {
 
 	data := Float64ToBytes(value)
 
-	// Write
-	err = store.db.PutCF(store.wo, cfHandle, key, data)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return cfHandle.Db.Set(key, data, pebble.Sync)
 }
 
 func (store *Store) GetFloat64(column string, key []byte) (float64, error) {
 
-	value, err := store.getValue(column, key)
+	value, closer, err := store.getValue(column, key)
 	if err != nil {
+		if err == pebble.ErrNotFound {
+			return 0, nil
+		}
+
 		return 0, err
 	}
 
-	if !value.Exists() {
-		return 0, nil
-	}
+	data := BytesToFloat64(value)
 
-	data := BytesToFloat64(value.Data())
-
-	value.Free()
+	closer.Close()
 
 	return data, nil
 }
 
 func (store *Store) GetBytes(column string, key []byte) ([]byte, error) {
 
-	value, err := store.getValue(column, key)
+	value, closer, err := store.getValue(column, key)
 	if err != nil {
-		return nil, err
+		if err == pebble.ErrNotFound {
+			return []byte(""), nil
+		}
+
+		return []byte(""), err
 	}
 
-	if !value.Exists() {
-		return nil, nil
-	}
+	data := make([]byte, len(value))
+	copy(data, value)
 
-	data := value.Data()
-	value.Free()
+	closer.Close()
 
 	return data, nil
 }
@@ -316,30 +249,26 @@ func (store *Store) PutString(column string, key []byte, value string) error {
 
 	data := StrToBytes(value)
 
-	// Write
-	err = store.db.PutCF(store.wo, cfHandle, key, data)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return cfHandle.Db.Set(key, data, pebble.Sync)
 }
 
 func (store *Store) GetString(column string, key []byte) (string, error) {
 
-	value, err := store.getValue(column, key)
+	value, closer, err := store.getValue(column, key)
 	if err != nil {
+		if err == pebble.ErrNotFound {
+			return "", nil
+		}
+
 		return "", err
 	}
 
-	if !value.Exists() {
-		return "", nil
-	}
+	data := make([]byte, len(value))
+	copy(data, value)
 
-	data := string(value.Data())
-	value.Free()
+	closer.Close()
 
-	return data, nil
+	return string(data), nil
 }
 
 func (store *Store) List(column string, targetKey []byte, callback func(key []byte, value []byte) bool) error {
@@ -349,28 +278,14 @@ func (store *Store) List(column string, targetKey []byte, callback func(key []by
 		return errors.New("Not found \"" + column + "\" column family")
 	}
 
-	// Initializing iterator
-	ro := gorocksdb.NewDefaultReadOptions()
-	ro.SetFillCache(false)
-	ro.SetTailing(true)
-	iter := store.db.NewIteratorCF(ro, cfHandle)
-	if iter.Err() != nil {
-		return iter.Err()
-	}
-
-	for iter.Seek(targetKey); iter.Valid(); iter.Next() {
-		key := iter.Key()
-		value := iter.Value()
-
-		isContinuous := callback(key.Data(), value.Data())
-
-		key.Free()
-		value.Free()
+	iter := cfHandle.Db.NewIter(nil)
+	for iter.SeekGE(targetKey); iter.Valid(); iter.Next() {
+		isContinuous := callback(iter.Key(), iter.Value())
 
 		if !isContinuous {
 			break
 		}
 	}
 
-	return nil
+	return iter.Close()
 }
