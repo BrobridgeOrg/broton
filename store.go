@@ -118,7 +118,7 @@ func (store *Store) Delete(column string, key []byte) error {
 		return errors.New("Not found \"" + column + "\" column family")
 	}
 
-	return cfHandle.Db.Delete(key, pebble.Sync)
+	return cfHandle.Db.Delete(key, pebble.NoSync)
 }
 
 func (store *Store) Put(column string, key []byte, data []byte) error {
@@ -128,7 +128,7 @@ func (store *Store) Put(column string, key []byte, data []byte) error {
 		return errors.New("Not found \"" + column + "\" column family")
 	}
 
-	return cfHandle.Db.Set(key, data, pebble.Sync)
+	return cfHandle.Db.Set(key, data, pebble.NoSync)
 }
 
 func (store *Store) PutInt64(column string, key []byte, value int64) error {
@@ -140,7 +140,7 @@ func (store *Store) PutInt64(column string, key []byte, value int64) error {
 
 	data := Int64ToBytes(value)
 
-	return cfHandle.Db.Set(key, data, pebble.Sync)
+	return cfHandle.Db.Set(key, data, pebble.NoSync)
 }
 
 func (store *Store) GetInt64(column string, key []byte) (int64, error) {
@@ -170,7 +170,7 @@ func (store *Store) PutUint64(column string, key []byte, value uint64) error {
 
 	data := Uint64ToBytes(value)
 
-	return cfHandle.Db.Set(key, data, pebble.Sync)
+	return cfHandle.Db.Set(key, data, pebble.NoSync)
 }
 
 func (store *Store) GetUint64(column string, key []byte) (uint64, error) {
@@ -200,7 +200,7 @@ func (store *Store) PutFloat64(column string, key []byte, value float64) error {
 
 	data := Float64ToBytes(value)
 
-	return cfHandle.Db.Set(key, data, pebble.Sync)
+	return cfHandle.Db.Set(key, data, pebble.NoSync)
 }
 
 func (store *Store) GetFloat64(column string, key []byte) (float64, error) {
@@ -249,7 +249,7 @@ func (store *Store) PutString(column string, key []byte, value string) error {
 
 	data := StrToBytes(value)
 
-	return cfHandle.Db.Set(key, data, pebble.Sync)
+	return cfHandle.Db.Set(key, data, pebble.NoSync)
 }
 
 func (store *Store) GetString(column string, key []byte) (string, error) {
