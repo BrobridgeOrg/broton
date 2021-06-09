@@ -2,7 +2,7 @@
 
 [![GoDoc](https://godoc.org/github.com/BrobridgeOrg/broton?status.svg)](http://godoc.org/github.com/BrobridgeOrg/broton)
 
-lightweight data store which is based on RocksDB.
+lightweight data store which is based on Pebble.
 
 ## License
 Licensed under the Apache License
