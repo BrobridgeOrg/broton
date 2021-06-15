@@ -1,7 +1,6 @@
 package broton
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -105,7 +104,7 @@ func (store *Store) getValue(column string, key []byte) ([]byte, io.Closer, erro
 
 	cfHandle, err := store.getColumnFamailyHandle(column)
 	if err != nil {
-		return nil, nil, errors.New("Not found \"" + column + "\" column family")
+		return nil, nil, err
 	}
 
 	return cfHandle.Db.Get(key)
@@ -115,7 +114,7 @@ func (store *Store) Delete(column string, key []byte) error {
 
 	cfHandle, err := store.getColumnFamailyHandle(column)
 	if err != nil {
-		return errors.New("Not found \"" + column + "\" column family")
+		return err
 	}
 
 	return cfHandle.Db.Delete(key, pebble.NoSync)
@@ -125,22 +124,22 @@ func (store *Store) Put(column string, key []byte, data []byte) error {
 
 	cfHandle, err := store.getColumnFamailyHandle(column)
 	if err != nil {
-		return errors.New("Not found \"" + column + "\" column family")
+		return err
 	}
 
-	return cfHandle.Db.Set(key, data, pebble.NoSync)
+	return cfHandle.Write(key, data)
 }
 
 func (store *Store) PutInt64(column string, key []byte, value int64) error {
 
 	cfHandle, err := store.getColumnFamailyHandle(column)
 	if err != nil {
-		return errors.New("Not found \"" + column + "\" column family")
+		return err
 	}
 
 	data := Int64ToBytes(value)
 
-	return cfHandle.Db.Set(key, data, pebble.NoSync)
+	return cfHandle.Write(key, data)
 }
 
 func (store *Store) GetInt64(column string, key []byte) (int64, error) {
@@ -165,12 +164,12 @@ func (store *Store) PutUint64(column string, key []byte, value uint64) error {
 
 	cfHandle, err := store.getColumnFamailyHandle(column)
 	if err != nil {
-		return errors.New("Not found \"" + column + "\" column family")
+		return err
 	}
 
 	data := Uint64ToBytes(value)
 
-	return cfHandle.Db.Set(key, data, pebble.NoSync)
+	return cfHandle.Write(key, data)
 }
 
 func (store *Store) GetUint64(column string, key []byte) (uint64, error) {
@@ -195,12 +194,12 @@ func (store *Store) PutFloat64(column string, key []byte, value float64) error {
 
 	cfHandle, err := store.getColumnFamailyHandle(column)
 	if err != nil {
-		return errors.New("Not found \"" + column + "\" column family")
+		return err
 	}
 
 	data := Float64ToBytes(value)
 
-	return cfHandle.Db.Set(key, data, pebble.NoSync)
+	return cfHandle.Write(key, data)
 }
 
 func (store *Store) GetFloat64(column string, key []byte) (float64, error) {
@@ -244,12 +243,12 @@ func (store *Store) PutString(column string, key []byte, value string) error {
 
 	cfHandle, err := store.getColumnFamailyHandle(column)
 	if err != nil {
-		return errors.New("Not found \"" + column + "\" column family")
+		return err
 	}
 
 	data := StrToBytes(value)
 
-	return cfHandle.Db.Set(key, data, pebble.NoSync)
+	return cfHandle.Write(key, data)
 }
 
 func (store *Store) GetString(column string, key []byte) (string, error) {
@@ -275,7 +274,7 @@ func (store *Store) List(column string, targetKey []byte, callback func(key []by
 
 	cfHandle, err := store.getColumnFamailyHandle(column)
 	if err != nil {
-		return errors.New("Not found \"" + column + "\" column family")
+		return err
 	}
 
 	iter := cfHandle.Db.NewIter(nil)
