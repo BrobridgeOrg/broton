@@ -3,6 +3,7 @@ package broton
 import (
 	"fmt"
 	"io"
+	"io/ioutil"
 	"os"
 	"path/filepath"
 
@@ -40,6 +41,22 @@ func (store *Store) openDatabase() error {
 	err := os.MkdirAll(store.dbPath, os.ModePerm)
 	if err != nil {
 		return err
+	}
+
+	files, err := ioutil.ReadDir(store.dbPath)
+	if err != nil {
+		return err
+	}
+
+	for _, file := range files {
+		if !file.IsDir() {
+			continue
+		}
+
+		_, err := store.assertColumnFamily(file.Name())
+		if err != nil {
+			return err
+		}
 	}
 
 	return nil
