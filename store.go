@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"sync"
 
 	"github.com/cockroachdb/pebble"
 )
@@ -16,6 +17,7 @@ type Store struct {
 	name           string
 	dbPath         string
 	columnFamilies map[string]*ColumnFamily
+	mu             sync.RWMutex
 }
 
 func NewStore(broton *Broton, storeName string) (*Store, error) {
@@ -109,6 +111,8 @@ func (store *Store) RegisterColumns(names []string) error {
 
 func (store *Store) getColumnFamailyHandle(name string) (*ColumnFamily, error) {
 
+	store.mu.RLock()
+	defer store.mu.RUnlock()
 	cf, ok := store.columnFamilies[name]
 	if !ok {
 		return nil, fmt.Errorf("Not found \"%s\" column family", name)
